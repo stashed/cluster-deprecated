@@ -1,6 +1,6 @@
 [![Go Report Card](https://goreportcard.com/badge/stash.appscode.dev/cluster)](https://goreportcard.com/report/stash.appscode.dev/cluster)
 [![Build Status](https://travis-ci.org/stashed/cluster.svg?branch=master)](https://travis-ci.org/stashed/cluster)
-[![Docker Pulls](https://img.shields.io/docker/pulls/appscode/cluster-stash.svg)](https://hub.docker.com/r/appscode/cluster-stash/)
+[![Docker Pulls](https://img.shields.io/docker/pulls/appscode/stash-cluster.svg)](https://hub.docker.com/r/appscode/stash-cluster/)
 [![Slack](https://slack.appscode.com/badge.svg)](https://slack.appscode.com)
 [![Twitter](https://img.shields.io/twitter/follow/appscodehq.svg?style=social&logo=twitter&label=Follow)](https://twitter.com/intent/follow?screen_name=AppsCodeHQ)
 
