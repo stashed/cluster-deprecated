@@ -1,16 +1,35 @@
+/*
+Copyright The Stash Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package util
 
 import (
 	"fmt"
 
+	"stash.appscode.dev/apimachinery/apis"
+	v1alpha1_api "stash.appscode.dev/apimachinery/apis/stash/v1alpha1"
+	v1beta1_api "stash.appscode.dev/apimachinery/apis/stash/v1beta1"
+	"stash.appscode.dev/apimachinery/pkg/docker"
+
 	"github.com/appscode/go/types"
 	core "k8s.io/api/core/v1"
 	"kmodules.xyz/client-go/tools/cli"
 	"kmodules.xyz/client-go/tools/clientcmd"
-	"stash.appscode.dev/stash/apis"
-	v1alpha1_api "stash.appscode.dev/stash/apis/stash/v1alpha1"
-	v1beta1_api "stash.appscode.dev/stash/apis/stash/v1beta1"
-	"stash.appscode.dev/stash/pkg/docker"
+	"kmodules.xyz/client-go/tools/pushgateway"
+	ofst_util "kmodules.xyz/offshoot-api/util"
 )
 
 func NewInitContainer(r *v1alpha1_api.Restic, workload v1alpha1_api.LocalTypedReference, image docker.Docker) core.Container {
@@ -22,36 +41,33 @@ func NewInitContainer(r *v1alpha1_api.Restic, workload v1alpha1_api.LocalTypedRe
 		"--workload-name=" + workload.Name,
 		"--docker-registry=" + image.Registry,
 		"--image-tag=" + image.Tag,
-		"--pushgateway-url=" + PushgatewayURL(),
-		fmt.Sprintf("--enable-status-subresource=%v", apis.EnableStatusSubresource),
+		"--pushgateway-url=" + pushgateway.URL(),
 		fmt.Sprintf("--use-kubeapiserver-fqdn-for-aks=%v", clientcmd.UseKubeAPIServerFQDNForAKS()),
 		fmt.Sprintf("--enable-analytics=%v", cli.EnableAnalytics),
 	}
 	container.Args = append(container.Args, cli.LoggerOptions.ToFlags()...)
-	container.Args = append(container.Args, "--enable-rbac=true")
 
 	return container
 }
 
 func NewRestoreInitContainer(rs *v1beta1_api.RestoreSession, repository *v1alpha1_api.Repository, image docker.Docker) core.Container {
 	initContainer := core.Container{
-		Name:  StashInitContainer,
+		Name:  apis.StashInitContainer,
 		Image: image.ToContainerImage(),
 		Args: append([]string{
 			"restore",
-			"--restore-session=" + rs.Name,
-			"--secret-dir=" + StashSecretMountDir,
+			"--restoresession=" + rs.Name,
+			"--secret-dir=" + apis.StashSecretMountDir,
 			fmt.Sprintf("--enable-cache=%v", !rs.Spec.TempDir.DisableCaching),
-			fmt.Sprintf("--max-connections=%v", GetMaxConnections(repository.Spec.Backend)),
+			fmt.Sprintf("--max-connections=%v", repository.Spec.Backend.MaxConnections()),
 			"--metrics-enabled=true",
-			"--pushgateway-url=" + PushgatewayURL(),
-			fmt.Sprintf("--enable-status-subresource=%v", apis.EnableStatusSubresource),
+			"--pushgateway-url=" + pushgateway.URL(),
 			fmt.Sprintf("--use-kubeapiserver-fqdn-for-aks=%v", clientcmd.UseKubeAPIServerFQDNForAKS()),
 			fmt.Sprintf("--enable-analytics=%v", cli.EnableAnalytics),
 		}, cli.LoggerOptions.ToFlags()...),
 		Env: []core.EnvVar{
 			{
-				Name: KeyNodeName,
+				Name: apis.KeyNodeName,
 				ValueFrom: &core.EnvVarSource{
 					FieldRef: &core.ObjectFieldSelector{
 						FieldPath: "spec.nodeName",
@@ -59,7 +75,7 @@ func NewRestoreInitContainer(rs *v1beta1_api.RestoreSession, repository *v1alpha
 				},
 			},
 			{
-				Name: KeyPodName,
+				Name: apis.KeyPodName,
 				ValueFrom: &core.EnvVarSource{
 					FieldRef: &core.ObjectFieldSelector{
 						FieldPath: "metadata.name",
@@ -69,8 +85,8 @@ func NewRestoreInitContainer(rs *v1beta1_api.RestoreSession, repository *v1alpha
 		},
 		VolumeMounts: []core.VolumeMount{
 			{
-				Name:      StashSecretVolume,
-				MountPath: StashSecretMountDir,
+				Name:      apis.StashSecretVolume,
+				MountPath: apis.StashSecretMountDir,
 			},
 		},
 	}
@@ -89,23 +105,13 @@ func NewRestoreInitContainer(rs *v1beta1_api.RestoreSession, repository *v1alpha
 
 	// if Repository uses local volume as backend, we have to mount it inside the initContainer
 	if repository.Spec.Backend.Local != nil {
-		_, mnt := repository.Spec.Backend.Local.ToVolumeAndMount(LocalVolumeName)
+		_, mnt := repository.Spec.Backend.Local.ToVolumeAndMount(apis.LocalVolumeName)
 		initContainer.VolumeMounts = append(initContainer.VolumeMounts, mnt)
 	}
 
 	// pass container runtime settings from RestoreSession to init-container
 	if rs.Spec.RuntimeSettings.Container != nil {
-		initContainer.Resources = rs.Spec.RuntimeSettings.Container.Resources
-
-		if rs.Spec.RuntimeSettings.Container.LivenessProbe != nil {
-			initContainer.LivenessProbe = rs.Spec.RuntimeSettings.Container.LivenessProbe
-		}
-		if rs.Spec.RuntimeSettings.Container.ReadinessProbe != nil {
-			initContainer.ReadinessProbe = rs.Spec.RuntimeSettings.Container.ReadinessProbe
-		}
-		if rs.Spec.RuntimeSettings.Container.Lifecycle != nil {
-			initContainer.Lifecycle = rs.Spec.RuntimeSettings.Container.Lifecycle
-		}
+		initContainer = ofst_util.ApplyContainerRuntimeSettings(initContainer, *rs.Spec.RuntimeSettings.Container)
 	}
 
 	// In order to preserve file ownership, restore process need to be run as root user.
@@ -117,9 +123,10 @@ func NewRestoreInitContainer(rs *v1beta1_api.RestoreSession, repository *v1alpha
 		RunAsGroup: types.Int64P(0),
 	}
 	if rs.Spec.RuntimeSettings.Container != nil {
-		securityContext = UpsertSecurityContext(securityContext, rs.Spec.RuntimeSettings.Container.SecurityContext)
+		initContainer.SecurityContext = UpsertSecurityContext(securityContext, rs.Spec.RuntimeSettings.Container.SecurityContext)
+	} else {
+		initContainer.SecurityContext = securityContext
 	}
-	initContainer.SecurityContext = UpsertSecurityContext(initContainer.SecurityContext, securityContext)
 
 	return initContainer
 }

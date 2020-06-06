@@ -9,8 +9,8 @@ import (
 	clientsetscheme "k8s.io/client-go/kubernetes/scheme"
 	"kmodules.xyz/client-go/logs"
 	"kmodules.xyz/client-go/tools/cli"
-	"stash.appscode.dev/stash/apis"
-	"stash.appscode.dev/stash/client/clientset/versioned/scheme"
+	"stash.appscode.dev/apimachinery/apis"
+	"stash.appscode.dev/apimachinery/client/clientset/versioned/scheme"
 	"stash.appscode.dev/stash/pkg/util"
 )
 

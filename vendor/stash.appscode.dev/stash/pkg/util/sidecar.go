@@ -1,18 +1,36 @@
+/*
+Copyright The Stash Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package util
 
 import (
 	"fmt"
+
+	"stash.appscode.dev/apimachinery/apis"
+	api "stash.appscode.dev/apimachinery/apis/stash/v1alpha1"
+	"stash.appscode.dev/apimachinery/pkg/docker"
 
 	"github.com/appscode/go/types"
 	core "k8s.io/api/core/v1"
 	"kmodules.xyz/client-go/tools/analytics"
 	"kmodules.xyz/client-go/tools/cli"
 	"kmodules.xyz/client-go/tools/clientcmd"
+	"kmodules.xyz/client-go/tools/pushgateway"
 	store "kmodules.xyz/objectstore-api/api/v1"
-	"stash.appscode.dev/stash/apis"
-	api "stash.appscode.dev/stash/apis/stash/v1alpha1"
-	v1beta1_api "stash.appscode.dev/stash/apis/stash/v1beta1"
-	"stash.appscode.dev/stash/pkg/docker"
+	ofst_util "kmodules.xyz/offshoot-api/util"
 )
 
 func NewSidecarContainer(r *api.Restic, workload api.LocalTypedReference, image docker.Docker) core.Container {
@@ -22,7 +40,7 @@ func NewSidecarContainer(r *api.Restic, workload api.LocalTypedReference, image 
 		}
 	}
 	sidecar := core.Container{
-		Name:  StashContainer,
+		Name:  apis.StashContainer,
 		Image: image.ToContainerImage(),
 		Args: append([]string{
 			"backup",
@@ -32,8 +50,7 @@ func NewSidecarContainer(r *api.Restic, workload api.LocalTypedReference, image 
 			"--docker-registry=" + image.Registry,
 			"--image-tag=" + image.Tag,
 			"--run-via-cron=true",
-			"--pushgateway-url=" + PushgatewayURL(),
-			fmt.Sprintf("--enable-status-subresource=%v", apis.EnableStatusSubresource),
+			"--pushgateway-url=" + pushgateway.URL(),
 			fmt.Sprintf("--use-kubeapiserver-fqdn-for-aks=%v", clientcmd.UseKubeAPIServerFQDNForAKS()),
 			fmt.Sprintf("--enable-analytics=%v", cli.EnableAnalytics),
 		}, cli.LoggerOptions.ToFlags()...),
@@ -66,11 +83,11 @@ func NewSidecarContainer(r *api.Restic, workload api.LocalTypedReference, image 
 		},
 		VolumeMounts: []core.VolumeMount{
 			{
-				Name:      ScratchDirVolumeName,
+				Name:      apis.ScratchDirVolumeName,
 				MountPath: "/tmp",
 			},
 			{
-				Name:      PodinfoVolumeName,
+				Name:      apis.PodinfoVolumeName,
 				MountPath: "/etc/stash",
 			},
 		},
@@ -83,31 +100,33 @@ func NewSidecarContainer(r *api.Restic, workload api.LocalTypedReference, image 
 		})
 	}
 	if r.Spec.Backend.Local != nil {
-		_, mnt := r.Spec.Backend.Local.ToVolumeAndMount(LocalVolumeName)
+		_, mnt := r.Spec.Backend.Local.ToVolumeAndMount(apis.LocalVolumeName)
 		sidecar.VolumeMounts = append(sidecar.VolumeMounts, mnt)
 	}
 	return sidecar
 }
 
-func NewBackupSidecarContainer(bc *v1beta1_api.BackupConfiguration, backend *store.Backend, image docker.Docker) core.Container {
+func NewBackupSidecarContainer(invoker apis.Invoker, targetInfo apis.TargetInfo, backend *store.Backend, image docker.Docker) core.Container {
 	sidecar := core.Container{
-		Name:  StashContainer,
+		Name:  apis.StashContainer,
 		Image: image.ToContainerImage(),
 		Args: append([]string{
 			"run-backup",
-			"--backup-configuration=" + bc.Name,
-			"--secret-dir=" + StashSecretMountDir,
-			fmt.Sprintf("--enable-cache=%v", !bc.Spec.TempDir.DisableCaching),
-			fmt.Sprintf("--max-connections=%v", GetMaxConnections(*backend)),
+			"--invoker-name=" + invoker.ObjectMeta.Name,
+			"--invoker-type=" + invoker.ObjectRef.Kind,
+			"--target-name=" + targetInfo.Target.Ref.Name,
+			"--target-kind=" + targetInfo.Target.Ref.Kind,
+			"--secret-dir=" + apis.StashSecretMountDir,
+			fmt.Sprintf("--enable-cache=%v", !targetInfo.TempDir.DisableCaching),
+			fmt.Sprintf("--max-connections=%v", backend.MaxConnections()),
 			"--metrics-enabled=true",
-			"--pushgateway-url=" + PushgatewayURL(),
-			fmt.Sprintf("--enable-status-subresource=%v", apis.EnableStatusSubresource),
+			"--pushgateway-url=" + pushgateway.URL(),
 			fmt.Sprintf("--use-kubeapiserver-fqdn-for-aks=%v", clientcmd.UseKubeAPIServerFQDNForAKS()),
 			fmt.Sprintf("--enable-analytics=%v", cli.EnableAnalytics),
 		}, cli.LoggerOptions.ToFlags()...),
 		Env: []core.EnvVar{
 			{
-				Name: KeyNodeName,
+				Name: apis.KeyNodeName,
 				ValueFrom: &core.EnvVarSource{
 					FieldRef: &core.ObjectFieldSelector{
 						FieldPath: "spec.nodeName",
@@ -115,7 +134,7 @@ func NewBackupSidecarContainer(bc *v1beta1_api.BackupConfiguration, backend *sto
 				},
 			},
 			{
-				Name: KeyPodName,
+				Name: apis.KeyPodName,
 				ValueFrom: &core.EnvVarSource{
 					FieldRef: &core.ObjectFieldSelector{
 						FieldPath: "metadata.name",
@@ -125,12 +144,12 @@ func NewBackupSidecarContainer(bc *v1beta1_api.BackupConfiguration, backend *sto
 		},
 		VolumeMounts: []core.VolumeMount{
 			{
-				Name:      PodinfoVolumeName,
+				Name:      apis.PodinfoVolumeName,
 				MountPath: "/etc/stash",
 			},
 			{
-				Name:      StashSecretVolume,
-				MountPath: StashSecretMountDir,
+				Name:      apis.StashSecretVolume,
+				MountPath: apis.StashSecretMountDir,
 			},
 		},
 	}
@@ -138,8 +157,8 @@ func NewBackupSidecarContainer(bc *v1beta1_api.BackupConfiguration, backend *sto
 	// mount tmp volume
 	sidecar.VolumeMounts = UpsertTmpVolumeMount(sidecar.VolumeMounts)
 
-	// mount the volumes specified in BackupConfiguration this sidecar
-	for _, srcVol := range bc.Spec.Target.VolumeMounts {
+	// mount the volumes specified in invoker this sidecar
+	for _, srcVol := range targetInfo.Target.VolumeMounts {
 		sidecar.VolumeMounts = append(sidecar.VolumeMounts, core.VolumeMount{
 			Name:      srcVol.Name,
 			MountPath: srcVol.MountPath,
@@ -148,32 +167,12 @@ func NewBackupSidecarContainer(bc *v1beta1_api.BackupConfiguration, backend *sto
 	}
 	// if Repository uses local volume as backend, we have to mount it inside the sidecar
 	if backend.Local != nil {
-		_, mnt := backend.Local.ToVolumeAndMount(LocalVolumeName)
+		_, mnt := backend.Local.ToVolumeAndMount(apis.LocalVolumeName)
 		sidecar.VolumeMounts = append(sidecar.VolumeMounts, mnt)
 	}
-	// pass container runtime settings from BackupConfiguration to sidecar
-	if bc.Spec.RuntimeSettings.Container != nil {
-		// by default container will run as root
-		securityContext := &core.SecurityContext{
-			RunAsUser:  types.Int64P(0),
-			RunAsGroup: types.Int64P(0),
-		}
-		if bc.Spec.RuntimeSettings.Container.SecurityContext != nil {
-			securityContext = bc.Spec.RuntimeSettings.Container.SecurityContext
-		}
-		sidecar.SecurityContext = securityContext
-
-		sidecar.Resources = bc.Spec.RuntimeSettings.Container.Resources
-
-		if bc.Spec.RuntimeSettings.Container.LivenessProbe != nil {
-			sidecar.LivenessProbe = bc.Spec.RuntimeSettings.Container.LivenessProbe
-		}
-		if bc.Spec.RuntimeSettings.Container.ReadinessProbe != nil {
-			sidecar.ReadinessProbe = bc.Spec.RuntimeSettings.Container.ReadinessProbe
-		}
-		if bc.Spec.RuntimeSettings.Container.Lifecycle != nil {
-			sidecar.Lifecycle = bc.Spec.RuntimeSettings.Container.Lifecycle
-		}
+	// pass container runtime settings from invoker to sidecar
+	if targetInfo.RuntimeSettings.Container != nil {
+		sidecar = ofst_util.ApplyContainerRuntimeSettings(sidecar, *targetInfo.RuntimeSettings.Container)
 	}
 	return sidecar
 }

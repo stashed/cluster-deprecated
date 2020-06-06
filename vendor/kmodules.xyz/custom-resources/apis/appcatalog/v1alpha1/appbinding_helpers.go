@@ -1,46 +1,38 @@
+/*
+Copyright The Kmodules Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package v1alpha1
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
-	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
-	crdutils "kmodules.xyz/client-go/apiextensions/v1beta1"
+	"kmodules.xyz/client-go/apiextensions"
+	"kmodules.xyz/custom-resources/crds"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
-func (a AppBinding) CustomResourceDefinition() *apiextensions.CustomResourceDefinition {
-	return crdutils.NewCustomResourceDefinition(crdutils.Config{
-		Group:         SchemeGroupVersion.Group,
-		Plural:        ResourceApps,
-		Singular:      ResourceApp,
-		Kind:          ResourceKindApp,
-		Categories:    []string{"catalog", "appscode", "all"},
-		ResourceScope: string(apiextensions.NamespaceScoped),
-		Versions: []apiextensions.CustomResourceDefinitionVersion{
-			{
-				Name:    SchemeGroupVersion.Version,
-				Served:  true,
-				Storage: true,
-			},
-		},
-		Labels: crdutils.Labels{
-			LabelsMap: map[string]string{"app": "catalog"},
-		},
-		SpecDefinitionName:      "kmodules.xyz/custom-resources/apis/appcatalog/v1alpha1.AppBinding",
-		EnableValidation:        true,
-		GetOpenAPIDefinitions:   GetOpenAPIDefinitions,
-		EnableStatusSubresource: false,
-		AdditionalPrinterColumns: []apiextensions.CustomResourceColumnDefinition{
-			{
-				Name:     "Age",
-				Type:     "date",
-				JSONPath: ".metadata.creationTimestamp",
-			},
-		},
-	})
+func (_ AppBinding) CustomResourceDefinition() *apiextensions.CustomResourceDefinition {
+	return crds.MustCustomResourceDefinition(SchemeGroupVersion.WithResource(ResourceApps))
 }
 
 func (a AppBinding) URL() (string, error) {
@@ -119,4 +111,48 @@ func (a AppBinding) Port() (int32, error) {
 		return int32(port), err
 	}
 	return 0, errors.New("connection url is missing")
+}
+
+func (a AppBinding) AppGroupResource() (string, string) {
+	t := string(a.Spec.Type)
+	idx := strings.LastIndexByte(t, '/')
+	if idx == -1 {
+		return "", t
+	}
+	return t[:idx], t[idx+1:]
+}
+
+// xref: https://github.com/kubernetes-sigs/service-catalog/blob/a204c0d26c60b42121aa608c39a179680e499d2a/pkg/controller/controller_binding.go#L605
+func (a AppBinding) TransformSecret(kc kubernetes.Interface, credentials map[string][]byte) error {
+	for _, t := range a.Spec.SecretTransforms {
+		switch {
+		case t.AddKey != nil:
+			var value []byte
+			if t.AddKey.StringValue != nil {
+				value = []byte(*t.AddKey.StringValue)
+			} else {
+				value = t.AddKey.Value
+			}
+			credentials[t.AddKey.Key] = value
+		case t.RenameKey != nil:
+			value, ok := credentials[t.RenameKey.From]
+			if ok {
+				credentials[t.RenameKey.To] = value
+				delete(credentials, t.RenameKey.From)
+			}
+		case t.AddKeysFrom != nil:
+			secret, err := kc.CoreV1().
+				Secrets(t.AddKeysFrom.SecretRef.Namespace).
+				Get(context.Background(), t.AddKeysFrom.SecretRef.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			for k, v := range secret.Data {
+				credentials[k] = v
+			}
+		case t.RemoveKey != nil:
+			delete(credentials, t.RemoveKey.Key)
+		}
+	}
+	return nil
 }

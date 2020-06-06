@@ -1,26 +1,45 @@
+/*
+Copyright The Stash Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package util
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
+
+	"stash.appscode.dev/apimachinery/apis/stash/v1alpha1"
+	v1beta1_api "stash.appscode.dev/apimachinery/apis/stash/v1beta1"
+	cs "stash.appscode.dev/apimachinery/client/clientset/versioned"
+	v1beta1_listers "stash.appscode.dev/apimachinery/client/listers/stash/v1beta1"
 
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"kmodules.xyz/client-go/meta"
 	wapi "kmodules.xyz/webhook-runtime/apis/workload/v1"
-	"stash.appscode.dev/stash/apis/stash/v1alpha1"
-	v1beta1_api "stash.appscode.dev/stash/apis/stash/v1beta1"
-	cs "stash.appscode.dev/stash/client/clientset/versioned"
-	v1beta1_listers "stash.appscode.dev/stash/client/listers/stash/v1beta1"
 )
 
 // GetAppliedBackupConfiguration check whether BackupConfiguration was applied as annotation and returns the object definition if exist.
 func GetAppliedBackupConfiguration(m map[string]string) (*v1beta1_api.BackupConfiguration, error) {
-	data := GetString(m, v1beta1_api.KeyLastAppliedBackupConfiguration)
+	data := GetString(m, v1beta1_api.KeyLastAppliedBackupInvoker)
+	invokerKind := GetString(m, v1beta1_api.KeyLastAppliedBackupInvokerKind)
 
-	if data == "" {
+	if data == "" || invokerKind != v1beta1_api.ResourceKindBackupConfiguration {
 		return nil, nil
 	}
 	obj, err := meta.UnmarshalFromJSON([]byte(data), v1beta1_api.SchemeGroupVersion)
@@ -29,7 +48,7 @@ func GetAppliedBackupConfiguration(m map[string]string) (*v1beta1_api.BackupConf
 	}
 	backupConfiguration, ok := obj.(*v1beta1_api.BackupConfiguration)
 	if !ok {
-		return nil, fmt.Errorf("%s annotations has invalid BackupConfiguration object", v1beta1_api.KeyLastAppliedBackupConfiguration)
+		return nil, fmt.Errorf("%s annotations has invalid invoker object", v1beta1_api.KeyLastAppliedBackupInvoker)
 	}
 	return backupConfiguration, nil
 }
@@ -70,14 +89,28 @@ func FindBackupConfiguration(lister v1beta1_listers.BackupConfigurationLister, w
 
 // BackupConfigurationEqual check whether two BackupConfigurations has same specification.
 func BackupConfigurationEqual(old, new *v1beta1_api.BackupConfiguration) bool {
-	var oldSpec, newSpec *v1beta1_api.BackupConfigurationSpec
-	if old != nil {
-		oldSpec = &old.Spec
+	if (old == nil && new != nil) || (old != nil && new == nil) {
+		return false
 	}
-	if new != nil {
-		newSpec = &new.Spec
+	if old == nil && new == nil {
+		return true
 	}
-	return reflect.DeepEqual(oldSpec, newSpec)
+
+	// If "spec.paused" field is changed, we don't need to restart the workload.
+	// Hence, we will compare the new and old BackupConfiguration spec after making
+	// `spec.paused` field equal. This will avoid the restart.
+	// We should not change the original value of "spec.paused" field of the old BackupConfiguration.
+	// Hence, we will keep the original value in a temporary variable and re-assign the original value
+	// after the comparison.
+
+	oldSpec := &old.Spec
+	newSpec := &new.Spec
+
+	oldVal := oldSpec.Paused
+	oldSpec.Paused = newSpec.Paused
+	result := reflect.DeepEqual(oldSpec, newSpec)
+	oldSpec.Paused = oldVal
+	return result
 }
 
 func BackupPending(phase v1beta1_api.BackupSessionPhase) bool {
@@ -89,7 +122,7 @@ func BackupPending(phase v1beta1_api.BackupSessionPhase) bool {
 
 func FindBackupConfigForRepository(stashClient cs.Interface, repository v1alpha1.Repository) (*v1beta1_api.BackupConfiguration, error) {
 	// list all backup config in the namespace
-	bcList, err := stashClient.StashV1beta1().BackupConfigurations(repository.Namespace).List(metav1.ListOptions{})
+	bcList, err := stashClient.StashV1beta1().BackupConfigurations(repository.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

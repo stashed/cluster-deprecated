@@ -8,8 +8,8 @@ import (
 	_ "k8s.io/client-go/kubernetes/fake"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"kmodules.xyz/client-go/logs"
+	_ "stash.appscode.dev/apimachinery/client/clientset/versioned/fake"
 	"stash.appscode.dev/cluster/pkg"
-	_ "stash.appscode.dev/stash/client/clientset/versioned/fake"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 	"kmodules.xyz/client-go/tools/backup"
-	"stash.appscode.dev/stash/pkg/restic"
+	"stash.appscode.dev/apimachinery/pkg/restic"
 	"stash.appscode.dev/stash/pkg/util"
 )
 
@@ -73,16 +73,16 @@ func NewCmdBackup() *cobra.Command {
 	cmd.Flags().StringVar(&opt.setupOpt.SecretDir, "secret-dir", opt.setupOpt.SecretDir, "Directory where storage secret has been mounted")
 	cmd.Flags().StringVar(&opt.setupOpt.ScratchDir, "scratch-dir", opt.setupOpt.ScratchDir, "Temporary directory")
 	cmd.Flags().BoolVar(&opt.setupOpt.EnableCache, "enable-cache", opt.setupOpt.EnableCache, "Specify weather to enable caching for restic")
-	cmd.Flags().IntVar(&opt.setupOpt.MaxConnections, "max-connections", opt.setupOpt.MaxConnections, "Specify maximum concurrent connections for GCS, Azure and B2 backend")
+	cmd.Flags().Int64Var(&opt.setupOpt.MaxConnections, "max-connections", opt.setupOpt.MaxConnections, "Specify maximum concurrent connections for GCS, Azure and B2 backend")
 
 	cmd.Flags().StringVar(&opt.backupOpt.Host, "hostname", opt.backupOpt.Host, "Name of the host machine")
 
-	cmd.Flags().IntVar(&opt.backupOpt.RetentionPolicy.KeepLast, "retention-keep-last", opt.backupOpt.RetentionPolicy.KeepLast, "Specify value for retention strategy")
-	cmd.Flags().IntVar(&opt.backupOpt.RetentionPolicy.KeepHourly, "retention-keep-hourly", opt.backupOpt.RetentionPolicy.KeepHourly, "Specify value for retention strategy")
-	cmd.Flags().IntVar(&opt.backupOpt.RetentionPolicy.KeepDaily, "retention-keep-daily", opt.backupOpt.RetentionPolicy.KeepDaily, "Specify value for retention strategy")
-	cmd.Flags().IntVar(&opt.backupOpt.RetentionPolicy.KeepWeekly, "retention-keep-weekly", opt.backupOpt.RetentionPolicy.KeepWeekly, "Specify value for retention strategy")
-	cmd.Flags().IntVar(&opt.backupOpt.RetentionPolicy.KeepMonthly, "retention-keep-monthly", opt.backupOpt.RetentionPolicy.KeepMonthly, "Specify value for retention strategy")
-	cmd.Flags().IntVar(&opt.backupOpt.RetentionPolicy.KeepYearly, "retention-keep-yearly", opt.backupOpt.RetentionPolicy.KeepYearly, "Specify value for retention strategy")
+	cmd.Flags().Int64Var(&opt.backupOpt.RetentionPolicy.KeepLast, "retention-keep-last", opt.backupOpt.RetentionPolicy.KeepLast, "Specify value for retention strategy")
+	cmd.Flags().Int64Var(&opt.backupOpt.RetentionPolicy.KeepHourly, "retention-keep-hourly", opt.backupOpt.RetentionPolicy.KeepHourly, "Specify value for retention strategy")
+	cmd.Flags().Int64Var(&opt.backupOpt.RetentionPolicy.KeepDaily, "retention-keep-daily", opt.backupOpt.RetentionPolicy.KeepDaily, "Specify value for retention strategy")
+	cmd.Flags().Int64Var(&opt.backupOpt.RetentionPolicy.KeepWeekly, "retention-keep-weekly", opt.backupOpt.RetentionPolicy.KeepWeekly, "Specify value for retention strategy")
+	cmd.Flags().Int64Var(&opt.backupOpt.RetentionPolicy.KeepMonthly, "retention-keep-monthly", opt.backupOpt.RetentionPolicy.KeepMonthly, "Specify value for retention strategy")
+	cmd.Flags().Int64Var(&opt.backupOpt.RetentionPolicy.KeepYearly, "retention-keep-yearly", opt.backupOpt.RetentionPolicy.KeepYearly, "Specify value for retention strategy")
 	cmd.Flags().StringSliceVar(&opt.backupOpt.RetentionPolicy.KeepTags, "retention-keep-tags", opt.backupOpt.RetentionPolicy.KeepTags, "Specify value for retention strategy")
 	cmd.Flags().BoolVar(&opt.backupOpt.RetentionPolicy.Prune, "retention-prune", opt.backupOpt.RetentionPolicy.Prune, "Specify weather to prune old snapshot data")
 	cmd.Flags().BoolVar(&opt.backupOpt.RetentionPolicy.DryRun, "retention-dry-run", opt.backupOpt.RetentionPolicy.DryRun, "Specify weather to test retention policy without deleting actual data")

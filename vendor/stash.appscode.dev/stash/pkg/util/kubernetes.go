@@ -1,14 +1,35 @@
+/*
+Copyright The Stash Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package util
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
+	"stash.appscode.dev/apimachinery/apis"
+	api "stash.appscode.dev/apimachinery/apis/stash/v1alpha1"
+	v1beta1_api "stash.appscode.dev/apimachinery/apis/stash/v1beta1"
+
 	"github.com/appscode/go/log"
 	"github.com/appscode/go/types"
-	snapshot_cs "github.com/kubernetes-csi/external-snapshotter/pkg/client/clientset/versioned"
+	snapshot_cs "github.com/kubernetes-csi/external-snapshotter/v2/pkg/client/clientset/versioned"
 	core "k8s.io/api/core/v1"
 	kerr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,51 +40,6 @@ import (
 	store "kmodules.xyz/objectstore-api/api/v1"
 	oc_cs "kmodules.xyz/openshift/client/clientset/versioned"
 	wapi "kmodules.xyz/webhook-runtime/apis/workload/v1"
-	"stash.appscode.dev/stash/apis"
-	api "stash.appscode.dev/stash/apis/stash/v1alpha1"
-	v1beta1_api "stash.appscode.dev/stash/apis/stash/v1beta1"
-)
-
-const (
-	StashContainer       = "stash"
-	StashInitContainer   = "stash-init"
-	LocalVolumeName      = "stash-local"
-	ScratchDirVolumeName = "stash-scratchdir"
-	TmpDirVolumeName     = "tmp-dir"
-	TmpDirMountPath      = "/tmp"
-	PodinfoVolumeName    = "stash-podinfo"
-
-	RecoveryJobPrefix   = "stash-recovery-"
-	ScaledownCronPrefix = "stash-scaledown-cron-"
-	CheckJobPrefix      = "stash-check-"
-
-	AnnotationRestic     = "restic"
-	AnnotationRecovery   = "recovery"
-	AnnotationOperation  = "operation"
-	AnnotationOldReplica = "old-replica"
-
-	OperationRecovery = "recovery"
-	OperationCheck    = "check"
-
-	AppLabelStash        = "stash"
-	AppLabelStashV1Beta1 = "stash-v1beta1"
-	OperationScaleDown   = "scale-down"
-
-	RepositoryFinalizer = "stash"
-	SnapshotIDLength    = 8
-
-	ModelSidecar             = "sidecar"
-	ModelCronJob             = "cronjob"
-	LabelApp                 = "app"
-	LabelBackupConfiguration = "backup-configuration"
-	StashSecretVolume        = "stash-secret-volume"
-	StashSecretMountDir      = "/etc/stash/repository/secret"
-
-	KeyPodName  = "POD_NAME"
-	KeyNodeName = "NODE_NAME"
-
-	RetryInterval    = 50 * time.Millisecond
-	ReadinessTimeout = 2 * time.Minute
 )
 
 func IsBackupTarget(target *v1beta1_api.BackupTarget, w *wapi.Workload) bool {
@@ -95,7 +71,7 @@ func GetString(m map[string]string, key string) string {
 
 func UpsertScratchVolume(volumes []core.Volume) []core.Volume {
 	return core_util.UpsertVolume(volumes, core.Volume{
-		Name: ScratchDirVolumeName,
+		Name: apis.ScratchDirVolumeName,
 		VolumeSource: core.VolumeSource{
 			EmptyDir: &core.EmptyDirVolumeSource{},
 		},
@@ -104,7 +80,7 @@ func UpsertScratchVolume(volumes []core.Volume) []core.Volume {
 
 func UpsertTmpVolume(volumes []core.Volume, settings v1beta1_api.EmptyDirSettings) []core.Volume {
 	return core_util.UpsertVolume(volumes, core.Volume{
-		Name: TmpDirVolumeName,
+		Name: apis.TmpDirVolumeName,
 		VolumeSource: core.VolumeSource{
 			EmptyDir: &core.EmptyDirVolumeSource{
 				Medium:    settings.Medium,
@@ -116,15 +92,15 @@ func UpsertTmpVolume(volumes []core.Volume, settings v1beta1_api.EmptyDirSetting
 
 func UpsertTmpVolumeMount(volumeMounts []core.VolumeMount) []core.VolumeMount {
 	return core_util.UpsertVolumeMountByPath(volumeMounts, core.VolumeMount{
-		Name:      TmpDirVolumeName,
-		MountPath: TmpDirMountPath,
+		Name:      apis.TmpDirVolumeName,
+		MountPath: apis.TmpDirMountPath,
 	})
 }
 
 // https://kubernetes.io/docs/tasks/inject-data-application/downward-api-volume-expose-pod-information/#store-pod-fields
 func UpsertDownwardVolume(volumes []core.Volume) []core.Volume {
 	return core_util.UpsertVolume(volumes, core.Volume{
-		Name: PodinfoVolumeName,
+		Name: apis.PodinfoVolumeName,
 		VolumeSource: core.VolumeSource{
 			DownwardAPI: &core.DownwardAPIVolumeSource{
 				Items: []core.DownwardAPIVolumeFile{
@@ -142,7 +118,7 @@ func UpsertDownwardVolume(volumes []core.Volume) []core.Volume {
 
 func UpsertSecretVolume(volumes []core.Volume, secretName string) []core.Volume {
 	return core_util.UpsertVolume(volumes, core.Volume{
-		Name: StashSecretVolume,
+		Name: apis.StashSecretVolume,
 		VolumeSource: core.VolumeSource{
 			Secret: &core.SecretVolumeSource{
 				SecretName: secretName,
@@ -239,7 +215,7 @@ func MergeLocalVolume(volumes []core.Volume, backend *store.Backend) []core.Volu
 	// check if stash-local volume already exist
 	oldPos := -1
 	for i, vol := range volumes {
-		if vol.Name == LocalVolumeName {
+		if vol.Name == apis.LocalVolumeName {
 			oldPos = i
 			break
 		}
@@ -247,7 +223,7 @@ func MergeLocalVolume(volumes []core.Volume, backend *store.Backend) []core.Volu
 
 	if backend != nil && backend.Local != nil {
 		// backend is local backend. we have to mount the local volume inside sidecar
-		vol, _ := backend.Local.ToVolumeAndMount(LocalVolumeName)
+		vol, _ := backend.Local.ToVolumeAndMount(apis.LocalVolumeName)
 		if oldPos != -1 {
 			volumes[oldPos] = vol
 		} else {
@@ -289,19 +265,19 @@ func WorkloadExists(k8sClient kubernetes.Interface, namespace string, workload a
 
 	switch workload.Kind {
 	case apis.KindDeployment:
-		_, err := k8sClient.AppsV1().Deployments(namespace).Get(workload.Name, metav1.GetOptions{})
+		_, err := k8sClient.AppsV1().Deployments(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		return err
 	case apis.KindReplicaSet:
-		_, err := k8sClient.AppsV1().ReplicaSets(namespace).Get(workload.Name, metav1.GetOptions{})
+		_, err := k8sClient.AppsV1().ReplicaSets(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		return err
 	case apis.KindReplicationController:
-		_, err := k8sClient.CoreV1().ReplicationControllers(namespace).Get(workload.Name, metav1.GetOptions{})
+		_, err := k8sClient.CoreV1().ReplicationControllers(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		return err
 	case apis.KindStatefulSet:
-		_, err := k8sClient.AppsV1().StatefulSets(namespace).Get(workload.Name, metav1.GetOptions{})
+		_, err := k8sClient.AppsV1().StatefulSets(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		return err
 	case apis.KindDaemonSet:
-		_, err := k8sClient.AppsV1().DaemonSets(namespace).Get(workload.Name, metav1.GetOptions{})
+		_, err := k8sClient.AppsV1().DaemonSets(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		return err
 	default:
 		return fmt.Errorf(`unrecognized workload "Kind" %v`, workload.Kind)
@@ -321,15 +297,15 @@ func GetRestoreConfigmapLockName(r v1beta1_api.TargetRef) string {
 }
 
 func DeleteConfigmapLock(k8sClient kubernetes.Interface, namespace string, workload api.LocalTypedReference) error {
-	return k8sClient.CoreV1().ConfigMaps(namespace).Delete(GetConfigmapLockName(workload), &metav1.DeleteOptions{})
+	return k8sClient.CoreV1().ConfigMaps(namespace).Delete(context.TODO(), GetConfigmapLockName(workload), metav1.DeleteOptions{})
 }
 
 func DeleteBackupConfigMapLock(k8sClient kubernetes.Interface, namespace string, r v1beta1_api.TargetRef) error {
-	return k8sClient.CoreV1().ConfigMaps(namespace).Delete(GetBackupConfigmapLockName(r), &metav1.DeleteOptions{})
+	return k8sClient.CoreV1().ConfigMaps(namespace).Delete(context.TODO(), GetBackupConfigmapLockName(r), metav1.DeleteOptions{})
 }
 
 func DeleteRestoreConfigMapLock(k8sClient kubernetes.Interface, namespace string, r v1beta1_api.TargetRef) error {
-	return k8sClient.CoreV1().ConfigMaps(namespace).Delete(GetRestoreConfigmapLockName(r), &metav1.DeleteOptions{})
+	return k8sClient.CoreV1().ConfigMaps(namespace).Delete(context.TODO(), GetRestoreConfigmapLockName(r), metav1.DeleteOptions{})
 }
 
 func DeleteAllConfigMapLocks(k8sClient kubernetes.Interface, namespace, name, kind string) error {
@@ -354,21 +330,21 @@ func DeleteAllConfigMapLocks(k8sClient kubernetes.Interface, namespace, name, ki
 func WorkloadReplicas(kubeClient *kubernetes.Clientset, namespace string, workloadKind string, workloadName string) (int32, error) {
 	switch workloadKind {
 	case apis.KindDeployment:
-		obj, err := kubeClient.AppsV1().Deployments(namespace).Get(workloadName, metav1.GetOptions{})
+		obj, err := kubeClient.AppsV1().Deployments(namespace).Get(context.TODO(), workloadName, metav1.GetOptions{})
 		if err != nil {
 			return 0, err
 		} else {
 			return *obj.Spec.Replicas, nil
 		}
 	case apis.KindReplicationController:
-		obj, err := kubeClient.CoreV1().ReplicationControllers(namespace).Get(workloadName, metav1.GetOptions{})
+		obj, err := kubeClient.CoreV1().ReplicationControllers(namespace).Get(context.TODO(), workloadName, metav1.GetOptions{})
 		if err != nil {
 			return 0, err
 		} else {
 			return *obj.Spec.Replicas, nil
 		}
 	case apis.KindReplicaSet:
-		obj, err := kubeClient.AppsV1().ReplicaSets(namespace).Get(workloadName, metav1.GetOptions{})
+		obj, err := kubeClient.AppsV1().ReplicaSets(namespace).Get(context.TODO(), workloadName, metav1.GetOptions{})
 		if err != nil {
 			return 0, err
 		} else {
@@ -385,19 +361,19 @@ func HasOldReplicaAnnotation(k8sClient *kubernetes.Clientset, namespace string, 
 
 	switch workload.Kind {
 	case apis.KindDeployment:
-		obj, err := k8sClient.AppsV1().Deployments(namespace).Get(workload.Name, metav1.GetOptions{})
+		obj, err := k8sClient.AppsV1().Deployments(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		if err != nil {
 			log.Fatalln(err)
 		}
 		workloadAnnotation = obj.Annotations
 	case apis.KindReplicationController:
-		obj, err := k8sClient.CoreV1().ReplicationControllers(namespace).Get(workload.Name, metav1.GetOptions{})
+		obj, err := k8sClient.CoreV1().ReplicationControllers(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		if err != nil {
 			log.Fatalln(err)
 		}
 		workloadAnnotation = obj.Annotations
 	case apis.KindReplicaSet:
-		obj, err := k8sClient.AppsV1().ReplicaSets(namespace).Get(workload.Name, metav1.GetOptions{})
+		obj, err := k8sClient.AppsV1().ReplicaSets(namespace).Get(context.TODO(), workload.Name, metav1.GetOptions{})
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -411,12 +387,12 @@ func HasOldReplicaAnnotation(k8sClient *kubernetes.Clientset, namespace string, 
 
 	}
 
-	return meta.HasKey(workloadAnnotation, AnnotationOldReplica)
+	return meta.HasKey(workloadAnnotation, apis.AnnotationOldReplica)
 }
 
 func WaitUntilDeploymentReady(c kubernetes.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, ReadinessTimeout, func() (bool, error) {
-		if obj, err := c.AppsV1().Deployments(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, apis.ReadinessTimeout, func() (bool, error) {
+		if obj, err := c.AppsV1().Deployments(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return types.Int32(obj.Spec.Replicas) == obj.Status.ReadyReplicas, nil
 		}
 		return false, nil
@@ -424,8 +400,8 @@ func WaitUntilDeploymentReady(c kubernetes.Interface, meta metav1.ObjectMeta) er
 }
 
 func WaitUntilDaemonSetReady(kubeClient kubernetes.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, ReadinessTimeout, func() (bool, error) {
-		if obj, err := kubeClient.AppsV1().DaemonSets(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, apis.ReadinessTimeout, func() (bool, error) {
+		if obj, err := kubeClient.AppsV1().DaemonSets(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return obj.Status.DesiredNumberScheduled == obj.Status.NumberReady, nil
 		}
 		return false, nil
@@ -433,8 +409,8 @@ func WaitUntilDaemonSetReady(kubeClient kubernetes.Interface, meta metav1.Object
 }
 
 func WaitUntilReplicaSetReady(c kubernetes.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, ReadinessTimeout, func() (bool, error) {
-		if obj, err := c.AppsV1().ReplicaSets(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, apis.ReadinessTimeout, func() (bool, error) {
+		if obj, err := c.AppsV1().ReplicaSets(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return types.Int32(obj.Spec.Replicas) == obj.Status.ReadyReplicas, nil
 		}
 		return false, nil
@@ -442,8 +418,8 @@ func WaitUntilReplicaSetReady(c kubernetes.Interface, meta metav1.ObjectMeta) er
 }
 
 func WaitUntilRCReady(c kubernetes.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, ReadinessTimeout, func() (bool, error) {
-		if obj, err := c.CoreV1().ReplicationControllers(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, apis.ReadinessTimeout, func() (bool, error) {
+		if obj, err := c.CoreV1().ReplicationControllers(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return types.Int32(obj.Spec.Replicas) == obj.Status.ReadyReplicas, nil
 		}
 
@@ -452,8 +428,8 @@ func WaitUntilRCReady(c kubernetes.Interface, meta metav1.ObjectMeta) error {
 }
 
 func WaitUntilStatefulSetReady(kubeClient kubernetes.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, ReadinessTimeout, func() (bool, error) {
-		if obj, err := kubeClient.AppsV1().StatefulSets(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, apis.ReadinessTimeout, func() (bool, error) {
+		if obj, err := kubeClient.AppsV1().StatefulSets(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return types.Int32(obj.Spec.Replicas) == obj.Status.ReadyReplicas, nil
 		}
 		return false, nil
@@ -461,8 +437,8 @@ func WaitUntilStatefulSetReady(kubeClient kubernetes.Interface, meta metav1.Obje
 }
 
 func WaitUntilDeploymentConfigReady(c oc_cs.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, ReadinessTimeout, func() (bool, error) {
-		if obj, err := c.AppsV1().DeploymentConfigs(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, apis.ReadinessTimeout, func() (bool, error) {
+		if obj, err := c.AppsV1().DeploymentConfigs(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return obj.Spec.Replicas == obj.Status.ReadyReplicas, nil
 		}
 		return false, nil
@@ -470,17 +446,17 @@ func WaitUntilDeploymentConfigReady(c oc_cs.Interface, meta metav1.ObjectMeta) e
 }
 
 func WaitUntilVolumeSnapshotReady(c snapshot_cs.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, 2*time.Hour, func() (bool, error) {
-		if obj, err := c.VolumesnapshotV1alpha1().VolumeSnapshots(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
-			return obj.Status.ReadyToUse == true, nil
+	return wait.PollImmediate(apis.RetryInterval, 2*time.Hour, func() (bool, error) {
+		if obj, err := c.SnapshotV1beta1().VolumeSnapshots(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
+			return obj.Status != nil && obj.Status.ReadyToUse != nil && *obj.Status.ReadyToUse, nil
 		}
 		return false, nil
 	})
 }
 
 func WaitUntilPVCReady(c kubernetes.Interface, meta metav1.ObjectMeta) error {
-	return wait.PollImmediate(RetryInterval, 2*time.Hour, func() (bool, error) {
-		if obj, err := c.CoreV1().PersistentVolumeClaims(meta.Namespace).Get(meta.Name, metav1.GetOptions{}); err == nil {
+	return wait.PollImmediate(apis.RetryInterval, 2*time.Hour, func() (bool, error) {
+		if obj, err := c.CoreV1().PersistentVolumeClaims(meta.Namespace).Get(context.TODO(), meta.Name, metav1.GetOptions{}); err == nil {
 			return obj.Status.Phase == core.ClaimBound, nil
 		}
 		return false, nil

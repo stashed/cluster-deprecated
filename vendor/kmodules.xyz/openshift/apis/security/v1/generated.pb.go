@@ -31,16 +31,16 @@
 */
 package v1
 
-import proto "github.com/gogo/protobuf/proto"
-import fmt "fmt"
-import math "math"
+import (
+	fmt "fmt"
+	io "io"
+	math "math"
+	reflect "reflect"
+	strings "strings"
 
-import k8s_io_api_core_v1 "k8s.io/api/core/v1"
-
-import strings "strings"
-import reflect "reflect"
-
-import io "io"
+	proto "github.com/gogo/protobuf/proto"
+	k8s_io_api_core_v1 "k8s.io/api/core/v1"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -65,9 +65,11 @@ func (m *IDRange) Reset()                    { *m = IDRange{} }
 func (*IDRange) ProtoMessage()               {}
 func (*IDRange) Descriptor() ([]byte, []int) { return fileDescriptorGenerated, []int{2} }
 
-func (m *PodSecurityPolicyReview) Reset()                    { *m = PodSecurityPolicyReview{} }
-func (*PodSecurityPolicyReview) ProtoMessage()               {}
-func (*PodSecurityPolicyReview) Descriptor() ([]byte, []int) { return fileDescriptorGenerated, []int{3} }
+func (m *PodSecurityPolicyReview) Reset()      { *m = PodSecurityPolicyReview{} }
+func (*PodSecurityPolicyReview) ProtoMessage() {}
+func (*PodSecurityPolicyReview) Descriptor() ([]byte, []int) {
+	return fileDescriptorGenerated, []int{3}
+}
 
 func (m *PodSecurityPolicyReviewSpec) Reset()      { *m = PodSecurityPolicyReviewSpec{} }
 func (*PodSecurityPolicyReviewSpec) ProtoMessage() {}

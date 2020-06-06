@@ -1,9 +1,26 @@
+/*
+Copyright The Kmodules Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package backup
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"io/ioutil"
 	"os"
@@ -116,7 +133,7 @@ func (mgr BackupManager) Backup(process processorFunc) error {
 	if err := rest.SetKubernetesDefaults(mgr.config); err != nil {
 		return err
 	}
-	mgr.config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: scheme.Codecs}
+	mgr.config.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: scheme.Codecs}
 	if mgr.config.UserAgent == "" {
 		mgr.config.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
@@ -162,7 +179,7 @@ func (mgr BackupManager) Backup(process processorFunc) error {
 				return err
 			}
 			request := client.Get().Resource(r.Name).Param("pretty", "true")
-			resp, err := request.DoRaw()
+			resp, err := request.DoRaw(context.TODO())
 			if err != nil {
 				return err
 			}
