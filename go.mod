@@ -9,7 +9,12 @@ require (
 	github.com/prometheus/common v0.4.1 // indirect
 	github.com/prometheus/procfs v0.0.0-20190523193104-a7aeb8df3389 // indirect
 	github.com/spf13/cobra v0.0.4
+	go.bytebuilders.dev/audit v0.0.19
+	go.bytebuilders.dev/license-verifier v0.9.7
+	go.bytebuilders.dev/license-verifier/kubernetes v0.9.7
 	golang.org/x/oauth2 v0.0.0-20190523182746-aaccbc9213b0 // indirect
+	gomodules.xyz/logs v0.0.6
+	gomodules.xyz/x v0.0.13
 	google.golang.org/appengine v1.6.0 // indirect
 	k8s.io/api v0.0.0-20190515023547-db5a9d1c40eb // indirect
 	k8s.io/apiextensions-apiserver v0.0.0-20190515024537-2fd0e9006049 // indirect
@@ -20,10 +25,13 @@ require (
 	k8s.io/kube-openapi v0.0.0-20190510232812-a01b7d5d6c22 // indirect
 	k8s.io/kubernetes v1.14.2 // indirect
 	k8s.io/utils v0.0.0-20190520173318-324c5df7d3f0 // indirect
-	kmodules.xyz/client-go v0.0.0-20190518160232-4afdbc13ba68
-	kmodules.xyz/custom-resources v0.0.0-20190508103408-464e8324c3ec // indirect
-	kmodules.xyz/objectstore-api v0.0.0-20190516233206-ea3ba546e348 // indirect
-	kmodules.xyz/webhook-runtime v0.0.0-20190508094945-962d01212c5b // indirect
+	kmodules.xyz/client-go af7b092cfac553478219d9f4662c5cab757fde12
+	kmodules.xyz/custom-resources 7beb809b1f5eb5dd1bbe61494513f3ccc5fcd9a5 // indirect
+	kmodules.xyz/monitoring-agent-api 0290ed5b75e16eb2d3a6066851ae5570d101b6f8
+	kmodules.xyz/objectstore-api f1d593d0a778b3f502dfff9cdcb759ac5e55e6a4 // indirect
+	kmodules.xyz/offshoot-api c076b2bcb0f89f707ef2329fc1c25d5a60937c11
+	kmodules.xyz/resource-metadata v0.10.15
+	kmodules.xyz/webhook-runtime 0ddfc9e4c2214ebcc4acd9e33d2f8e9880de1428 // indirect
 	stash.appscode.dev/stash v0.0.0-20190523192034-eadca45d8c6b
 )
 
@@ -33,7 +41,7 @@ replace (
 	k8s.io/api => k8s.io/api v0.0.0-20190313235455-40a48860b5ab
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.0.0-20190315093550-53c4693659ed
 	k8s.io/apimachinery => github.com/kmodules/apimachinery v0.0.0-20190508045248-a52a97a7a2bf
-	k8s.io/apiserver => github.com/kmodules/apiserver v0.0.0-20190508082252-8397d761d4b5
+	k8s.io/apiserver => github.com/kmodules/apiserver v0.21.2-0.20220112070009-e3f6e88991d9
 	k8s.io/cli-runtime => k8s.io/cli-runtime v0.0.0-20190314001948-2899ed30580f
 	k8s.io/cloud-provider => k8s.io/cloud-provider v0.0.0-20190314002645-c892ea32361a
 	k8s.io/component-base => k8s.io/component-base v0.0.0-20190314000054-4a91899592f4
@@ -44,3 +52,13 @@ replace (
 	k8s.io/metrics => k8s.io/metrics v0.0.0-20190314001731-1bd6a4002213
 	k8s.io/utils => k8s.io/utils v0.0.0-20190221042446-c2654d5206da
 )
+
+replace github.com/satori/go.uuid => github.com/gomodules/uuid v4.0.0+incompatible
+
+replace github.com/dgrijalva/jwt-go => github.com/gomodules/jwt v3.2.2+incompatible
+
+replace github.com/golang-jwt/jwt => github.com/golang-jwt/jwt v3.2.2+incompatible
+
+replace github.com/form3tech-oss/jwt-go => github.com/form3tech-oss/jwt-go v3.2.5+incompatible
+
+replace helm.sh/helm/v3 => github.com/kubepack/helm/v3 v3.6.1-0.20210518225915-c3e0ce48dd1b
